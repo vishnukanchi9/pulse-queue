@@ -59,7 +59,7 @@ PostgreSQL owns durable job state. Redis is the delivery and scheduling layer, w
 
 ## Run
 
-```powershell
+```bash
 docker compose up --build
 ```
 
@@ -67,14 +67,18 @@ Open [http://localhost:8080](http://localhost:8080) for the dashboard. It refres
 
 Submit a normal job:
 
-```powershell
-Invoke-RestMethod -Method Post http://localhost:8080/api/jobs -ContentType 'application/json' -Body '{"queueName":"notifications","payload":"{\"message\":\"welcome\"}","maxAttempts":3}'
+```bash
+curl -X POST http://localhost:8080/api/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"queueName":"notifications","payload":"{\"message\":\"welcome\"}","maxAttempts":3}'
 ```
 
 Submit a job that demonstrates retries and the dead-letter queue:
 
-```powershell
-Invoke-RestMethod -Method Post http://localhost:8080/api/jobs -ContentType 'application/json' -Body '{"queueName":"notifications","payload":"{\"simulateFailure\":true}","maxAttempts":3}'
+```bash
+curl -X POST http://localhost:8080/api/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"queueName":"notifications","payload":"{\"simulateFailure\":true}","maxAttempts":3}'
 ```
 
 Use `GET /api/jobs/{id}` to watch a job move through its states, or `GET /api/jobs` to see all jobs.
@@ -91,15 +95,33 @@ Use `GET /api/jobs/{id}` to watch a job move through its states, or `GET /api/jo
 
 ## Verify
 
-```powershell
-mvn test
+```bash
+./mvnw verify          # or: mvn verify
 docker compose up --build -d
-Invoke-RestMethod http://localhost:8080/healthz
+curl http://localhost:8080/healthz
 ```
+
+`verify` runs the full suite: `RetryPolicyTest` covers the backoff arithmetic, while
+`QueueLifecycleTest` and `DurabilityTest` start a real PostgreSQL and a real Redis through
+Testcontainers, so **a running Docker daemon is required**. The image build itself skips
+tests, since there is no Docker socket inside a build.
+
+**What the suite proves**
+
+| Test | Claim it defends |
+| --- | --- |
+| A healthy job succeeds on the first attempt | The happy path actually runs |
+| A failure schedules a retry with a future backoff | Retries are deferred, and scored into Redis so they survive a worker restart |
+| Repeated failure stops at the attempt ceiling and dead-letters | The budget is respected, not overshot |
+| A single-attempt job dead-letters without being scheduled | No phantom retry when none is allowed |
+| The retry set is drained after promotion | Nothing re-enqueues forever |
+| One poisoned job does not disturb the others | A bad payload cannot stall the queue |
+| A job whose Redis publish is destroyed still completes | The reaper genuinely recovers stranded work |
+| A job delivered twice runs once | The claim lock collapses at-least-once delivery |
 
 To stop the local stack without deleting its data:
 
-```powershell
+```bash
 docker compose down
 ```
 
@@ -111,6 +133,19 @@ docker compose down
 - **Database-backed state transitions:** the dashboard can reconstruct job history even if Redis restarts.
 - **Flyway-owned schema:** the same reviewed migration runs locally, in CI, and in production.
 
-## Deliberate limitation
+## Deliberate limitations
 
-Redis delivery is at-least-once. A production implementation would add a transactional outbox to close the small gap between persisting a job and enqueueing it, make downstream processors idempotent, add authentication, and expose Prometheus metrics.
+Named rather than hidden:
+
+- **`execute` holds the row lock for the life of the payload.** That is what makes a
+  redelivered job run once, but long-running work would hold a lock for its duration.
+  Splitting claim from execution, with a lease and a heartbeat, is the usual answer.
+- **Recovery is a sweep, not an outbox.** The reaper repairs the PostgreSQL/Redis gap
+  after the fact; a transactional outbox would prevent it arising. The sweep is the
+  cheaper trade at this size, and its cost is up to one grace period of delay before a
+  stranded job is noticed.
+- **No authentication.** The API is open, which is fine for a demo and not for anything else.
+- **No metrics endpoint.** `GET /api/jobs/stats` covers the dashboard; Prometheus and
+  per-queue histograms would be the next step.
+- **The processor is a stub.** `JobProcessor` fails deterministically on a payload flag so
+  retry and dead-letter behaviour are demonstrable without an external vendor.
