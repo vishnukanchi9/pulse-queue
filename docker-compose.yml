@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: pulse_queue
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse_queue"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+  api:
+    build: .
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/pulse_queue
+      DATABASE_USER: pulse
+      DATABASE_PASSWORD: pulse
+      REDIS_HOST: redis
+      QUEUE_WORKER_ENABLED: "false"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+    ports: ["8080:8080"]
+  worker:
+    build: .
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/pulse_queue
+      DATABASE_USER: pulse
+      DATABASE_PASSWORD: pulse
+      REDIS_HOST: redis
+      QUEUE_WORKER_ENABLED: "true"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
