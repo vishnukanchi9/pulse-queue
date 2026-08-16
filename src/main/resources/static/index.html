@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pulse Queue Control Room</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside class="rail">
+    <div class="brand"><span class="mark">P</span><span>Pulse Queue</span></div>
+    <nav><button class="nav active">Control room</button><button class="nav" id="openSubmit">Submit a job</button></nav>
+    <div class="system"><span class="live-dot"></span><div><strong>Worker online</strong><small>Polling Redis</small></div></div>
+  </aside>
+  <main>
+    <header><div><p class="eyebrow">DISTRIBUTED TASK QUEUE</p><h1>Control room</h1><p class="lede">Watch work move from intake to completion—and see failures before users do.</p></div><button class="primary" id="newJob">+ New job</button></header>
+    <section class="metrics" id="metrics" aria-label="Job totals"></section>
+    <section class="workspace">
+      <div class="table-head"><div><p class="eyebrow">LIVE WORKLOAD</p><h2>Job stream</h2></div><div class="tools"><select id="statusFilter" aria-label="Filter jobs by status"><option value="ALL">All statuses</option><option value="QUEUED">Queued</option><option value="PROCESSING">Processing</option><option value="RETRY_SCHEDULED">Retrying</option><option value="SUCCEEDED">Succeeded</option><option value="DEAD_LETTER">Dead letter</option></select><button class="secondary" id="refresh">Refresh</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Status</th><th>Queue</th><th>Job ID</th><th>Attempts</th><th>Created</th><th></th></tr></thead><tbody id="jobs"></tbody></table><div class="empty" id="empty" hidden>No jobs match this filter.</div></div>
+    </section>
+  </main>
+  <dialog id="submitDialog"><form id="submitForm"><button type="button" class="close" data-close aria-label="Close">×</button><p class="eyebrow">QUEUE NEW WORK</p><h2>Submit a job</h2><label>Queue name<input name="queueName" value="notifications" required></label><label>JSON payload<textarea name="payload" rows="5" required>{"message":"Welcome aboard"}</textarea></label><label>Maximum attempts<input name="maxAttempts" type="number" value="3" min="1" max="20" required></label><p class="form-error" id="formError"></p><button class="primary full" type="submit">Send to queue</button></form></dialog>
+  <dialog id="detailDialog"><article id="detail"></article></dialog><div class="toast" id="toast" role="status"></div><script src="/app.js"></script>
+</body>
+</html>
