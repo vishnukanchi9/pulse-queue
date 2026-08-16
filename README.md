@@ -4,6 +4,32 @@
 
 A distributed job queue built with Java, Spring Boot, PostgreSQL, Redis, and Docker. An API accepts work, Redis delivers it to workers, and PostgreSQL is the durable system of record for job state.
 
+## Durability: the PostgreSQL/Redis seam
+
+`submit` commits the job row and then publishes its id to Redis. Those are two systems
+with no transaction between them — the classic dual-write — and pretending otherwise
+would be the real flaw. The design instead makes the failure **recoverable**:
+
+- **PostgreSQL is the system of record. Redis is only a delivery hint.** The write order
+  matters: a durable row with no queue entry can be found again, whereas an id in Redis
+  with no row behind it would be a job nobody could reconstruct.
+- **A publish failure does not fail the caller.** The job is already durable, and
+  reporting an error would suggest the submission was lost when it was not.
+- **`OrphanReaper` sweeps for rows stuck in `QUEUED`** past a grace period and republishes
+  them. A non-empty sweep logs at `WARN`, because it means the two stores actually diverged.
+- **Delivery is therefore at-least-once, and execution is exactly-once.** The reaper
+  republishes without checking Redis membership — that check would be an O(n) scan of the
+  ready list on every sweep — so duplicates are expected. `claim` takes a
+  `PESSIMISTIC_WRITE` lock on the row, which is what collapses them.
+
+`DurabilityTest` proves each half: a job whose Redis publish is deliberately destroyed is
+recovered and completes with `attempts == 1`, and a job delivered twice runs once.
+
+The remaining cost is that `execute` holds the row lock for the life of the payload, which
+would matter for long-running work. An outbox table plus a publisher would remove the gap
+entirely rather than repairing it after the fact; the reaper is the cheaper trade for a
+queue this size.
+
 ## Architecture
 
 ```mermaid

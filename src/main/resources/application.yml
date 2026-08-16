@@ -15,3 +15,7 @@ queue:
   worker-enabled: ${QUEUE_WORKER_ENABLED:true}
   poll-ms: ${QUEUE_POLL_MS:250}
   retry-poll-ms: ${QUEUE_RETRY_POLL_MS:1000}
+  # Orphan recovery. The grace period must stay well above poll-ms, or the
+  # reaper republishes healthy jobs that are merely waiting their turn.
+  orphan-sweep-ms: ${QUEUE_ORPHAN_SWEEP_MS:15000}
+  orphan-grace-ms: ${QUEUE_ORPHAN_GRACE_MS:30000}
